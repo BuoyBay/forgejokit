@@ -1,0 +1,479 @@
+Private Function TextField(data As JSONItem, key As String) As String
+    Return data.Value(key).AsString().Or("")
+End Function
+
+Private Function NumberField(data As JSONItem, key As String) As Integer
+    Dim item As JSONItem = data.Value(key)
+    If item.IsNull() Then Return 0
+    If Not item.IsNumber() Then Throw New InvalidArgumentException("Expected a numeric Forgejo identifier")
+    Dim number As Double = item.AsNumber().Value
+    If number <> number Or number < 0.0 Or number > 9007199254740991.0 Then Throw New InvalidArgumentException("Forgejo identifier exceeds JSON exact integer range")
+    If number <> Math.Floor(number) Then Throw New InvalidArgumentException("Expected an integer Forgejo identifier")
+    Return number
+End Function
+
+Private Sub NoControls(value As String)
+    For Each character As String In String.Chars(value)
+        Dim code As Integer = String.Asc(character)
+        If code < 32 Or code = 127 Then Throw New InvalidArgumentException("Control character is not allowed")
+    Next
+End Sub
+
+' Percent-encode exactly one UTF-8 path segment. Dots and slash cannot change routes.
+Public Function EncodeForgejoSegment(value As String) As String
+    If value = "" Or value = "." Or value = ".." Then Throw New InvalidArgumentException("A nonempty path segment is required")
+    NoControls(value)
+    Dim encoded As String = ""
+    Dim digits As String = "0123456789ABCDEF"
+    Dim data As Bytes = Bytes.FromString(value, Text.Encodings.UTF8)
+    For i As Integer = 0 To data.Count - 1
+        Dim n As Integer = data.Item(i)
+        If (n >= 65 And n <= 90) Or (n >= 97 And n <= 122) Or (n >= 48 And n <= 57) Or n = 45 Or n = 46 Or n = 95 Or n = 126 Then
+            encoded += String.Chr(n)
+        Else
+            encoded += "%" + String.Substring(digits, n \ 16, 1) + String.Substring(digits, n Mod 16, 1)
+        End If
+    Next
+    Return encoded
+End Function
+
+Public Class ForgejoAPIException Inherits Exception
+    Public Property HTTPStatus As Integer
+    Public Property RequestID As String
+    Public Property RateLimitRemaining As String
+    Public Property RateLimitReset As String
+    Public Property RetryAfter As String
+
+    Public Sub Constructor(message As String, status As Integer, requestID As String, remaining As String, resetValue As String, retry As String)
+        Super.Constructor(message, status)
+        Me.HTTPStatus = status
+        Me.RequestID = requestID
+        Me.RateLimitRemaining = remaining
+        Me.RateLimitReset = resetValue
+        Me.RetryAfter = retry
+    End Sub
+End Class
+
+Public Class ForgejoRepository
+    Public Property RawJSON As JSONItem
+    Public Property ID As Integer
+    Public Property Name As String
+    Public Property FullName As String
+    Public Property Description As String
+    Public Property HTMLURL As String
+    Public Property DefaultBranch As String
+    Public Property IsPrivate As Boolean
+
+    Public Sub Constructor(data As JSONItem)
+        If data = Nil Then Throw New InvalidArgumentException("JSON object is required")
+        If Not data.IsObject() Then Throw New InvalidArgumentException("JSON object is required")
+        Me.RawJSON = data
+        Me.ID = NumberField(data, "id")
+        Me.Name = TextField(data, "name")
+        Me.FullName = TextField(data, "full_name")
+        Me.Description = TextField(data, "description")
+        Me.HTMLURL = TextField(data, "html_url")
+        Me.DefaultBranch = TextField(data, "default_branch")
+        Me.IsPrivate = data.Value("private").AsBoolean().Or(False)
+    End Sub
+End Class
+
+Public Class ForgejoIssue
+    Public Property RawJSON As JSONItem
+    Public Property ID As Integer
+    Public Property Number As Integer
+    Public Property Title As String
+    Public Property Body As String
+    Public Property State As String
+    Public Property HTMLURL As String
+    Public Property CommentCount As Integer
+    Public Property IsPullRequest As Boolean
+
+    Public Sub Constructor(data As JSONItem)
+        If data = Nil Then Throw New InvalidArgumentException("JSON object is required")
+        If Not data.IsObject() Then Throw New InvalidArgumentException("JSON object is required")
+        Me.RawJSON = data
+        Me.ID = NumberField(data, "id")
+        Me.Number = NumberField(data, "number")
+        Me.Title = TextField(data, "title")
+        Me.Body = TextField(data, "body")
+        Me.State = TextField(data, "state")
+        Me.HTMLURL = TextField(data, "html_url")
+        Me.CommentCount = NumberField(data, "comments")
+        Me.IsPullRequest = data.Value("pull_request").IsObject()
+    End Sub
+End Class
+
+Public Class ForgejoComment
+    Public Property RawJSON As JSONItem
+    Public Property ID As Integer
+    Public Property Body As String
+    Public Property HTMLURL As String
+    Public Property CreatedAt As String
+
+    Public Sub Constructor(data As JSONItem)
+        If data = Nil Then Throw New InvalidArgumentException("JSON object is required")
+        If Not data.IsObject() Then Throw New InvalidArgumentException("JSON object is required")
+        Me.RawJSON = data
+        Me.ID = NumberField(data, "id")
+        Me.Body = TextField(data, "body")
+        Me.HTMLURL = TextField(data, "html_url")
+        Me.CreatedAt = TextField(data, "created_at")
+    End Sub
+End Class
+
+Public Class ForgejoLabel
+    Public Property RawJSON As JSONItem
+    Public Property ID As Integer
+    Public Property Name As String
+    Public Property Color As String
+    Public Property Description As String
+
+    Public Sub Constructor(data As JSONItem)
+        If data = Nil Then Throw New InvalidArgumentException("JSON object is required")
+        If Not data.IsObject() Then Throw New InvalidArgumentException("JSON object is required")
+        Me.RawJSON = data
+        Me.ID = NumberField(data, "id")
+        Me.Name = TextField(data, "name")
+        Me.Color = TextField(data, "color")
+        Me.Description = TextField(data, "description")
+    End Sub
+End Class
+
+Public Class ForgejoMilestone
+    Public Property RawJSON As JSONItem
+    Public Property ID As Integer
+    Public Property Title As String
+    Public Property Description As String
+    Public Property State As String
+    Public Property DueOn As String
+
+    Public Sub Constructor(data As JSONItem)
+        If data = Nil Then Throw New InvalidArgumentException("JSON object is required")
+        If Not data.IsObject() Then Throw New InvalidArgumentException("JSON object is required")
+        Me.RawJSON = data
+        Me.ID = NumberField(data, "id")
+        Me.Title = TextField(data, "title")
+        Me.Description = TextField(data, "description")
+        Me.State = TextField(data, "state")
+        Me.DueOn = TextField(data, "due_on")
+    End Sub
+End Class
+
+Public Class ForgejoPullRequest
+    Public Property RawJSON As JSONItem
+    Public Property ID As Integer
+    Public Property Number As Integer
+    Public Property Title As String
+    Public Property Body As String
+    Public Property State As String
+    Public Property HTMLURL As String
+    Public Property Merged As Boolean
+    Public Property Draft As Boolean
+
+    Public Sub Constructor(data As JSONItem)
+        If data = Nil Then Throw New InvalidArgumentException("JSON object is required")
+        If Not data.IsObject() Then Throw New InvalidArgumentException("JSON object is required")
+        Me.RawJSON = data
+        Me.ID = NumberField(data, "id")
+        Me.Number = NumberField(data, "number")
+        Me.Title = TextField(data, "title")
+        Me.Body = TextField(data, "body")
+        Me.State = TextField(data, "state")
+        Me.HTMLURL = TextField(data, "html_url")
+        Me.Merged = data.Value("merged").AsBoolean().Or(False)
+        Me.Draft = data.Value("draft").AsBoolean().Or(False)
+    End Sub
+End Class
+
+Public Class ForgejoIssuePage
+    Public Property Items As Array Of ForgejoIssue
+    Public Property Page As Integer
+    Public Property Limit As Integer
+    Public Property TotalCount As Integer = -1
+    Public Property LinkHeader As String
+    Public Property PageCount As Integer = -1
+    Public Property RawJSON As JSONItem
+End Class
+
+Public Class ForgejoLabelPage
+    Public Property Items As Array Of ForgejoLabel
+    Public Property Page As Integer
+    Public Property Limit As Integer
+    Public Property TotalCount As Integer = -1
+    Public Property LinkHeader As String
+    Public Property PageCount As Integer = -1
+    Public Property RawJSON As JSONItem
+End Class
+
+Public Class ForgejoMilestonePage
+    Public Property Items As Array Of ForgejoMilestone
+    Public Property Page As Integer
+    Public Property Limit As Integer
+    Public Property TotalCount As Integer = -1
+    Public Property LinkHeader As String
+    Public Property PageCount As Integer = -1
+    Public Property RawJSON As JSONItem
+End Class
+
+Public Class ForgejoPullRequestPage
+    Public Property Items As Array Of ForgejoPullRequest
+    Public Property Page As Integer
+    Public Property Limit As Integer
+    Public Property TotalCount As Integer = -1
+    Public Property LinkHeader As String
+    Public Property PageCount As Integer = -1
+    Public Property RawJSON As JSONItem
+End Class
+
+' Blocking REST client. Call on a worker thread in GUI applications.
+Public Class ForgejoClient
+    Private Property BaseURL As String
+    Private Property Token As String
+    Private Property TimeoutSeconds As Integer
+    Private Property LastConnection As URLConnection
+
+    Public Sub Constructor(apiBase As String, token As String = "", allowLoopbackHTTP As Boolean = False, timeoutSeconds As Integer = 30)
+        NoControls(apiBase)
+        NoControls(token)
+        If timeoutSeconds < 1 Or timeoutSeconds > 3600 Then Throw New InvalidArgumentException("Timeout must be between 1 and 3600 seconds")
+        If apiBase <> String.Trim(apiBase) Then Throw New InvalidArgumentException("Whitespace in API base")
+        If String.Contains(apiBase, "@") Or String.Contains(apiBase, "?") Or String.Contains(apiBase, "#") Or String.Contains(apiBase, "\\") Or String.Contains(apiBase, "%") Then Throw New InvalidArgumentException("Invalid API base")
+        While String.EndsWith(apiBase, "/")
+            apiBase = String.Left(apiBase, String.Len(apiBase) - 1)
+        End While
+        Dim prefix As String = "https://"
+        If String.StartsWith(apiBase, "http://") Then prefix = "http://"
+        If Not String.StartsWith(apiBase, prefix) Then Throw New InvalidArgumentException("HTTPS API base is required")
+        Dim rest As String = String.Substring(apiBase, String.Len(prefix))
+        Dim parts As Array Of String = String.Split(rest, "/")
+        If Array.Count(parts) < 3 Or parts(0) = "" Or Not String.EndsWith(apiBase, "/api/v1") Then Throw New InvalidArgumentException("API base must end in /api/v1")
+        Dim authority As String = parts(0)
+        For Each c As String In String.Chars(authority)
+            If String.Asc(c) <= 32 Then Throw New InvalidArgumentException("Invalid API authority")
+        Next
+        Dim authorityParts As Array Of String = String.Split(authority, ":")
+        If Array.Count(authorityParts) > 2 Or authorityParts(0) = "" Then Throw New InvalidArgumentException("Invalid API host")
+        For Each c As String In String.Chars(authorityParts(0))
+            Dim code As Integer = String.Asc(c)
+            If Not ((code >= 65 And code <= 90) Or (code >= 97 And code <= 122) Or (code >= 48 And code <= 57) Or c = "." Or c = "-") Then Throw New InvalidArgumentException("API host must be ASCII DNS or IPv4")
+        Next
+        If authorityParts(0) = "." Or authorityParts(0) = ".." Then Throw New InvalidArgumentException("Invalid API host")
+        If Array.Count(authorityParts) = 2 Then
+            Dim port As Integer = Integer.Parse(authorityParts(1)).Or(0)
+            If port < 1 Or port > 65535 Then Throw New InvalidArgumentException("Invalid API port")
+            For Each c As String In String.Chars(authorityParts(1))
+                If String.Asc(c) < 48 Or String.Asc(c) > 57 Then Throw New InvalidArgumentException("Invalid API port")
+            Next
+        End If
+        If prefix = "http://" Then
+            Dim host As String = authorityParts(0)
+            If Not allowLoopbackHTTP Or (host <> "127.0.0.1" And host <> "localhost") Then Throw New InvalidArgumentException("HTTP is allowed only for opted-in loopback fixtures")
+        End If
+        For i As Integer = 1 To Array.Count(parts) - 1
+            If parts(i) = "." Or parts(i) = ".." Or parts(i) = "" Then Throw New InvalidArgumentException("Invalid API base path")
+        Next
+        Me.BaseURL = apiBase
+        Me.Token = token
+        Me.TimeoutSeconds = timeoutSeconds
+    End Sub
+
+    Private Function Safe(value As String) As String
+        If Me.Token = "" Then Return value
+        Return String.Replace(value, Me.Token, "[redacted]")
+    End Function
+
+    Private Function Header(name As String) As String
+        For Each entry In Me.LastConnection.ResponseHeaders.Entries()
+            If String.LCase(entry.Key) = String.LCase(name) Then Return Me.Safe(entry.Value)
+        Next
+        Return ""
+    End Function
+
+    Private Function ResponseShapeError(message As String) As ForgejoAPIException
+        Return New ForgejoAPIException(message, Me.LastConnection.HTTPStatus, Me.Header("x-request-id"), Me.Header("x-ratelimit-remaining"), Me.Header("x-ratelimit-reset"), Me.Header("retry-after"))
+    End Function
+
+    Private Function Send(verb As String, relative As String, payload As String = "") As JSONItem
+        Dim connection As New URLConnection()
+        connection.Timeout = Me.TimeoutSeconds
+        connection.ConnectionTimeout = Me.TimeoutSeconds
+        connection.VerifySSL = True
+        connection.FollowRedirects = False
+        connection.RequestHeaders.Set("Accept", "application/json")
+        connection.RequestHeaders.Set("User-Agent", "Buoy-ForgejoKit/0.1.0")
+        If Me.Token <> "" Then connection.RequestHeaders.Set("Authorization", "token " + Me.Token)
+        If payload <> "" Then connection.RequestHeaders.Set("Content-Type", "application/json")
+        Me.LastConnection = connection
+        Dim responseBody As String
+        Try
+            responseBody = connection.Send(verb, Me.BaseURL + relative, payload)
+        Catch e As NetworkingException
+            Throw New ForgejoAPIException("Forgejo transport failed", 0, "", "", "", "")
+        End Try
+        Dim status As Integer = connection.HTTPStatus
+        If status < 200 Or status >= 300 Then
+            Dim apiMessage As String = "Forgejo HTTP " + String.From(status)
+            Dim parsed As Optional Of JSONItem = Json.TryParse(responseBody)
+            If parsed.HasValue Then
+                Dim supplied As String = TextField(parsed.Value, "message")
+                If supplied <> "" Then apiMessage += ": " + supplied
+            End If
+            Throw New ForgejoAPIException(Me.Safe(apiMessage), status, Me.Header("x-request-id"), Me.Header("x-ratelimit-remaining"), Me.Header("x-ratelimit-reset"), Me.Header("retry-after"))
+        End If
+        If status = 204 Then Return JSONItem.Null()
+        Dim parsed As Optional Of JSONItem = Json.TryParse(responseBody)
+        If Not parsed.HasValue Then Throw New ForgejoAPIException("Forgejo returned invalid JSON", status, Me.Header("x-request-id"), "", "", "")
+        Return parsed.Value
+    End Function
+
+    Private Function RepoRoute(owner As String, repo As String) As String
+        Return "/repos/" + EncodeForgejoSegment(owner) + "/" + EncodeForgejoSegment(repo)
+    End Function
+
+    Private Sub Positive(n As Integer)
+        If n < 1 Then Throw New InvalidArgumentException("An issue index or positive identifier is required")
+    End Sub
+
+    Private Function Paging(page As Integer, limit As Integer) As String
+        If page < 1 Or limit < 1 Or limit > 100 Then Throw New InvalidArgumentException("Page must be positive and limit between 1 and 100")
+        Return "?page=" + String.From(page) + "&limit=" + String.From(limit)
+    End Function
+
+    Private Sub StateFilter(state As String)
+        If state <> "open" And state <> "closed" And state <> "all" Then Throw New InvalidArgumentException("State must be open, closed, or all")
+    End Sub
+
+    Public Function GetRepository(owner As String, repo As String) As ForgejoRepository
+        Return New ForgejoRepository(Me.Send("GET", Me.RepoRoute(owner, repo)))
+    End Function
+
+    Public Function GetIssue(owner As String, repo As String, index As Integer) As ForgejoIssue
+        Me.Positive(index)
+        Return New ForgejoIssue(Me.Send("GET", Me.RepoRoute(owner, repo) + "/issues/" + String.From(index)))
+    End Function
+
+    Public Function CreateIssue(owner As String, repo As String, title As String, body As String = "") As ForgejoIssue
+        If String.Trim(title) = "" Then Throw New InvalidArgumentException("Issue title is required")
+        Dim payload As JSONItem = JSONItem.NewObject()
+        payload.Value("title") = title
+        payload.Value("body") = body
+        Return New ForgejoIssue(Me.Send("POST", Me.RepoRoute(owner, repo) + "/issues", Json.Stringify(payload)))
+    End Function
+
+    ' Pass only fields to change: title, body, state, assignees, milestone, ref, due_date, unset_due_date.
+    Public Function UpdateIssue(owner As String, repo As String, index As Integer, changes As JSONItem) As ForgejoIssue
+        Me.Positive(index)
+        If changes = Nil Then Throw New InvalidArgumentException("Issue changes object is required")
+        If Not changes.IsObject() Or changes.Count() = 0 Then Throw New InvalidArgumentException("Issue changes object is required")
+        For Each key As String In changes.Keys()
+            If Not Array.Contains(["title", "body", "state", "assignees", "milestone", "ref", "due_date", "unset_due_date"], key) Then Throw New InvalidArgumentException("Unsupported issue change field")
+        Next
+        If changes.HasKey("state") Then
+            Dim state As String = changes.Value("state").AsString().Or("")
+            If state <> "open" And state <> "closed" Then Throw New InvalidArgumentException("Issue state must be open or closed")
+        End If
+        Return New ForgejoIssue(Me.Send("PATCH", Me.RepoRoute(owner, repo) + "/issues/" + String.From(index), Json.Stringify(changes)))
+    End Function
+
+    ' Forgejo's comments-list endpoint is unpaged in its OpenAPI contract.
+    Public Function ListComments(owner As String, repo As String, index As Integer) As Array Of ForgejoComment
+        Me.Positive(index)
+        Dim data As JSONItem = Me.Send("GET", Me.RepoRoute(owner, repo) + "/issues/" + String.From(index) + "/comments")
+        If Not data.IsArray() Then Throw Me.ResponseShapeError("Expected comments array")
+        Dim items(0) As ForgejoComment
+        For i As Integer = 0 To data.Count() - 1
+            Array.Append(items, New ForgejoComment(data.ValueAt(i)))
+        Next
+        Return items
+    End Function
+
+    Public Function CreateComment(owner As String, repo As String, index As Integer, body As String) As ForgejoComment
+        Me.Positive(index)
+        If String.Trim(body) = "" Then Throw New InvalidArgumentException("Comment body is required")
+        Dim payload As JSONItem = JSONItem.NewObject()
+        payload.Value("body") = body
+        Return New ForgejoComment(Me.Send("POST", Me.RepoRoute(owner, repo) + "/issues/" + String.From(index) + "/comments", Json.Stringify(payload)))
+    End Function
+
+    Public Function GetPullRequest(owner As String, repo As String, index As Integer) As ForgejoPullRequest
+        Me.Positive(index)
+        Return New ForgejoPullRequest(Me.Send("GET", Me.RepoRoute(owner, repo) + "/pulls/" + String.From(index)))
+    End Function
+
+    Public Function ListIssues(owner As String, repo As String, page As Integer = 1, limit As Integer = 30, state As String = "open", issueType As String = "issues") As ForgejoIssuePage
+        Me.StateFilter(state)
+        If issueType <> "issues" And issueType <> "pulls" Then Throw New InvalidArgumentException("Issue type must be issues or pulls")
+        Dim data As JSONItem = Me.Send("GET", Me.RepoRoute(owner, repo) + "/issues" + Me.Paging(page, limit) + "&state=" + state + "&type=" + issueType)
+        If Not data.IsArray() Then Throw Me.ResponseShapeError("Expected list array")
+        Dim listing As New ForgejoIssuePage()
+        Dim items(0) As ForgejoIssue
+        For i As Integer = 0 To data.Count() - 1
+            Array.Append(items, New ForgejoIssue(data.ValueAt(i)))
+        Next
+        listing.Items = items
+        listing.RawJSON = data
+        listing.Page = page
+        listing.Limit = limit
+        listing.TotalCount = Integer.Parse(Me.Header("x-total-count")).Or(-1)
+        listing.PageCount = Integer.Parse(Me.Header("x-pagecount")).Or(-1)
+        listing.LinkHeader = Me.Header("link")
+        Return listing
+    End Function
+
+    Public Function ListLabels(owner As String, repo As String, page As Integer = 1, limit As Integer = 30) As ForgejoLabelPage
+        Dim data As JSONItem = Me.Send("GET", Me.RepoRoute(owner, repo) + "/labels" + Me.Paging(page, limit))
+        If Not data.IsArray() Then Throw Me.ResponseShapeError("Expected list array")
+        Dim listing As New ForgejoLabelPage()
+        Dim items(0) As ForgejoLabel
+        For i As Integer = 0 To data.Count() - 1
+            Array.Append(items, New ForgejoLabel(data.ValueAt(i)))
+        Next
+        listing.Items = items
+        listing.RawJSON = data
+        listing.Page = page
+        listing.Limit = limit
+        listing.TotalCount = Integer.Parse(Me.Header("x-total-count")).Or(-1)
+        listing.PageCount = Integer.Parse(Me.Header("x-pagecount")).Or(-1)
+        listing.LinkHeader = Me.Header("link")
+        Return listing
+    End Function
+
+    Public Function ListMilestones(owner As String, repo As String, page As Integer = 1, limit As Integer = 30, state As String = "open") As ForgejoMilestonePage
+        Me.StateFilter(state)
+        Dim data As JSONItem = Me.Send("GET", Me.RepoRoute(owner, repo) + "/milestones" + Me.Paging(page, limit) + "&state=" + state)
+        If Not data.IsArray() Then Throw Me.ResponseShapeError("Expected list array")
+        Dim listing As New ForgejoMilestonePage()
+        Dim items(0) As ForgejoMilestone
+        For i As Integer = 0 To data.Count() - 1
+            Array.Append(items, New ForgejoMilestone(data.ValueAt(i)))
+        Next
+        listing.Items = items
+        listing.RawJSON = data
+        listing.Page = page
+        listing.Limit = limit
+        listing.TotalCount = Integer.Parse(Me.Header("x-total-count")).Or(-1)
+        listing.PageCount = Integer.Parse(Me.Header("x-pagecount")).Or(-1)
+        listing.LinkHeader = Me.Header("link")
+        Return listing
+    End Function
+
+    Public Function ListPullRequests(owner As String, repo As String, page As Integer = 1, limit As Integer = 30, state As String = "open") As ForgejoPullRequestPage
+        Me.StateFilter(state)
+        Dim data As JSONItem = Me.Send("GET", Me.RepoRoute(owner, repo) + "/pulls" + Me.Paging(page, limit) + "&state=" + state)
+        If Not data.IsArray() Then Throw Me.ResponseShapeError("Expected list array")
+        Dim listing As New ForgejoPullRequestPage()
+        Dim items(0) As ForgejoPullRequest
+        For i As Integer = 0 To data.Count() - 1
+            Array.Append(items, New ForgejoPullRequest(data.ValueAt(i)))
+        Next
+        listing.Items = items
+        listing.RawJSON = data
+        listing.Page = page
+        listing.Limit = limit
+        listing.TotalCount = Integer.Parse(Me.Header("x-total-count")).Or(-1)
+        listing.PageCount = Integer.Parse(Me.Header("x-pagecount")).Or(-1)
+        listing.LinkHeader = Me.Header("link")
+        Return listing
+    End Function
+End Class

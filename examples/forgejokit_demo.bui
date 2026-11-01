@@ -1,0 +1,15 @@
+Import forgejokit
+
+' Read-only example. Provide HTTPS API base, owner, repository, without credentials.
+' In a GUI, call blocking client methods from a worker thread.
+Sub Main(args As Array Of String)
+    If Array.Count(args) < 4 Then
+        Print "Usage: forgejokit_demo <https://host/api/v1> <owner> <repo>"
+        Return
+    End If
+    Dim client As New ForgejoClient(args(1))
+    Dim issues As ForgejoIssuePage = client.ListIssues(args(2), args(3))
+    For Each issue As ForgejoIssue In issues.Items
+        Print "#" + String.From(issue.Number) + " " + issue.Title
+    Next
+End Sub
