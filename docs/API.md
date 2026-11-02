@@ -10,23 +10,12 @@ command-line tool dependency. Requests block the calling thread; use a worker
 thread in a GUI. Client instances are stateful and should not be shared between
 concurrent requests.
 
-## Build and verify
+## Use in an application
 
-```sh
-# Test a preassembled archive instead:
-```
-
-The runner seals `packages/forgejokit-0.1.0.buipkg`, copies it to `dist/`, checks
-the module, test and example on all six Buoy targets, and runs a sealed consumer
-against a loopback HTTP fixture. It tests encoded Unicode paths, exact request
-headers and JSON payloads, issue ID/index differences, paging headers, HTTP
-errors, token redaction, redirect refusal and input validation. It does not
-access a real Forgejo account or create real tickets.
-
-Copy the archive into a consumer project's `packages/` directory. The
-[console example](../examples/forgejokit_demo.bui) reads public issues without
-credentials. The API has no built-in credential storage: applications can obtain
-a token from their own settings/keychain and supply it to the constructor.
+The client uses Buoy's `URLConnection` and needs no extra native package.
+The [console example](../examples/forgejokit_demo.bui) reads issues without
+credentials. Supply a token from application-owned settings or a credential
+store when authenticated requests are needed.
 
 ## Client
 
@@ -102,5 +91,3 @@ The implementation was checked against Forgejo's official
 [instance OpenAPI schema](https://code.forgejo.org/swagger.v1.json). Forgejo
 maintains compatibility within a major version, while major releases can change
 endpoints; consult the target instance's own `/swagger.v1.json` for extensions.
-
-Test suites and fixtures are maintainer-local and are not part of this public repository.

@@ -34,5 +34,4 @@ UpdateIssue allows title, body, state, assignees, milestone, ref, due_date, and 
 - [Getting started](getting-started.md)
 - [API reference](api.md)
 
-
 [Full typed API: properties, parameters, defaults, and returns](typed-api.md)

@@ -11,7 +11,7 @@ related: ["index.md", "api.md", "typed-api.md"]
 
 Copy the forgejokit archive to packages and import it. Replace the illustrative API root, owner, and repository before running. The example reads the first page of public tickets anonymously; use your application's credential provider when authentication is required.
 
-```buoy
+```basic
 Import forgejokit
 
 Sub Main()
