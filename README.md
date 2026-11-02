@@ -1,4 +1,4 @@
-# Forgejo repos, issues, pull requests
+# Forgejo repos, issues, PRs
 
 A source-only, cross-platform Forgejo REST client for an IDE's repository and
 issue panels. `Import forgejokit` exposes typed repositories, issues, comments,
